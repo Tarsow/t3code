@@ -39,12 +39,16 @@ export const previewStreamControlLabel = (
       : control.controller === "you"
         ? resolve(msg("You have control"))
         : control.controller === "agent"
-          ? resolve(msg("Agent has control"))
+          ? resolve(msg("Shared with the agent"))
           : control.controller === "another-viewer"
             ? resolve(msg("Another viewer has control"))
             : resolve(
-                msg("Watching", { $context: "preview stream status, viewing without control" }),
+                msg("Shared", { $context: "preview stream status, any viewer or agent can act" }),
               );
+
+/** Viewers act on a tab nobody has taken, beside its agent; taking control makes it exclusive. */
+export const previewStreamAcceptsInput = (control: PreviewStreamControl | null): boolean =>
+  control !== null && control.canOperate && control.controller !== "another-viewer";
 
 const isPreviewStreamDialog = (value: unknown): value is PreviewStreamControl["dialog"] =>
   value === null ||
@@ -391,7 +395,7 @@ export function createPreviewStreamClient(
     send: (input) => {
       if (socket?.readyState !== WebSocket.OPEN) return false;
       if (!control?.canOperate) return false;
-      if (input.type !== "takeControl" && control.controller !== "you") return false;
+      if (input.type !== "takeControl" && !previewStreamAcceptsInput(control)) return false;
       socket.send(JSON.stringify(input));
       return true;
     },

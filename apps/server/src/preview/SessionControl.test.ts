@@ -3,30 +3,33 @@ import { describe, expect, it } from "vite-plus/test";
 import { BrowserControlInterrupted, SessionControl } from "./SessionControl.ts";
 
 describe("SessionControl", () => {
-  it("replaces waiting hover work without changing the running action or delaying the following click", async () => {
-    const control = new SessionControl("agent");
-    await control.take("viewer");
-    const started = Promise.withResolvers<void>();
-    const finish = Promise.withResolvers<void>();
-    const events: Array<number | string> = [];
-    const running = control.humanLatest("viewer", "hover:0", undefined, async () => {
-      events.push("running");
-      started.resolve();
-      await finish.promise;
-    });
-    await started.promise;
-    const moves = Array.from({ length: 120 }, (_, position) =>
-      control.humanLatest("viewer", "hover:0", undefined, async () => {
-        events.push(position);
-      }),
-    );
-    const click = control.human("viewer", async () => {
-      events.push("click");
-    });
-    finish.resolve();
-    await Promise.all([running, ...moves, click]);
-    expect(events).toEqual(["running", 119, "click"]);
-  });
+  it.each([true, false])(
+    "replaces waiting hover work without changing the running action or delaying the following click (taken: %s)",
+    async (taken) => {
+      const control = new SessionControl("agent");
+      if (taken) await control.take("viewer");
+      const started = Promise.withResolvers<void>();
+      const finish = Promise.withResolvers<void>();
+      const events: Array<number | string> = [];
+      const running = control.humanLatest("viewer", "hover:0", undefined, async () => {
+        events.push("running");
+        started.resolve();
+        await finish.promise;
+      });
+      await started.promise;
+      const moves = Array.from({ length: 120 }, (_, position) =>
+        control.humanLatest("viewer", "hover:0", undefined, async () => {
+          events.push(position);
+        }),
+      );
+      const click = control.human("viewer", async () => {
+        events.push("click");
+      });
+      finish.resolve();
+      await Promise.all([running, ...moves, click]);
+      expect(events).toEqual(["running", 119, "click"]);
+    },
+  );
 
   it.each(["human", "system", "modifiers"] as const)(
     "does not merge waiting hover work across a %s action",
@@ -342,6 +345,51 @@ describe("SessionControl", () => {
     await control.disconnect("viewer");
     await control.close();
     expect(control.generation).toBe(1);
+  });
+
+  it("runs viewer input beside agent work until a viewer takes control", async () => {
+    const control = new SessionControl("agent");
+    const finish = Promise.withResolvers<void>();
+    const events: string[] = [];
+    const agentWork = control.agent("agent", async () => {
+      await finish.promise;
+      events.push("agent finished");
+    });
+    await control.human("viewer-a", async () => events.push("a typed"));
+    expect(events).toEqual(["a typed"]);
+    expect(control.activeViewer).toBe("viewer-a");
+
+    const typingStarted = Promise.withResolvers<void>();
+    const held = Promise.withResolvers<void>();
+    const typing = control.human("viewer-b", async () => {
+      typingStarted.resolve();
+      await held.promise;
+    });
+    await typingStarted.promise;
+    const stale = expect(control.human("viewer-b", async () => "stale")).rejects.toThrow(
+      BrowserControlInterrupted,
+    );
+    const takeover = control.take("viewer-a");
+    await expect(control.human("viewer-b", async () => "blocked")).rejects.toThrow(
+      BrowserControlInterrupted,
+    );
+    await expect(control.agent("agent", async () => "blocked")).rejects.toMatchObject({
+      reason: "humanControl",
+    });
+    finish.resolve();
+    held.resolve();
+    await Promise.all([agentWork, typing, stale, takeover]);
+    expect(events).toEqual(["a typed", "agent finished"]);
+    expect(control.activeViewer).toBe("viewer-a");
+
+    await control.release("viewer-a");
+    const released: string[] = [];
+    await control.human("viewer-b", async () => released.push("b typed"));
+    await control.disconnect("viewer-b", async () => {
+      released.push("b keys released");
+    });
+    expect(released).toEqual(["b typed", "b keys released"]);
+    expect(control.activeViewer).toBeNull();
   });
 
   it("lets any agent act on a tab no agent opened, but only while no human controls it", async () => {

@@ -1482,8 +1482,8 @@ const make = Effect.gen(function* () {
       const shownInTab =
         navigation === tab.navigationGeneration && tab.page.url() === "about:blank";
       if (shownInTab) return;
-      const controller = [...tab.viewers].find((viewer) => viewer.id === tab.control.controller);
-      controller?.push({
+      const recipient = [...tab.viewers].find((viewer) => viewer.id === tab.control.activeViewer);
+      recipient?.push({
         _tag: "download",
         id,
         fileName: saved.fileName,
@@ -1542,15 +1542,15 @@ const make = Effect.gen(function* () {
 
   const pushFileChooser = (tab: ServerTab) => {
     const open = tab.fileChooser;
-    const controller = [...tab.viewers].find((viewer) => viewer.id === tab.control.controller);
-    if (!open || !controller) return;
-    if (open.offeredTo !== controller.id) {
-      tab.fileChooser = { ...open, id: NodeCrypto.randomUUID(), offeredTo: controller.id };
+    const recipient = [...tab.viewers].find((viewer) => viewer.id === tab.control.activeViewer);
+    if (!open || !recipient) return;
+    if (open.offeredTo !== recipient.id) {
+      tab.fileChooser = { ...open, id: NodeCrypto.randomUUID(), offeredTo: recipient.id };
       if (open.offeredTo !== null)
         for (const viewer of tab.viewers) viewer.push({ _tag: "fileChooserClosed", id: open.id });
     }
     const message = fileChooserMessage(tab);
-    if (message) controller.push(message);
+    if (message) recipient.push(message);
   };
 
   const closeFileChooser = (tab: ServerTab) => {
@@ -1570,7 +1570,7 @@ const make = Effect.gen(function* () {
       !open ||
       open.id !== input.chooserId ||
       open.offeredTo === null ||
-      open.offeredTo !== tab.control.controller
+      open.offeredTo !== tab.control.activeViewer
     )
       return false;
     if (input.files.length > 0) {
@@ -1702,8 +1702,8 @@ const make = Effect.gen(function* () {
     }
     const url = popup.url();
 
-    const controller = [...opener.viewers].find(
-      (viewer) => viewer.id === opener.control.controller,
+    const recipient = [...opener.viewers].find(
+      (viewer) => viewer.id === opener.control.activeViewer,
     );
     await runPromise(
       openTab({
@@ -1723,7 +1723,7 @@ const make = Effect.gen(function* () {
       }),
     ).then(
       (tab) => {
-        if (opener.control.agentId === null) controller?.push({ _tag: "popup", tabId: tab.tabId });
+        if (opener.control.agentId === null) recipient?.push({ _tag: "popup", tabId: tab.tabId });
       },
       async () => {
         await popup.close().catch(constVoid);
@@ -3273,9 +3273,6 @@ const make = Effect.gen(function* () {
           reportLiveTabs();
         }),
     );
-    if (input.canOperate && tab.control.agentId === null && tab.control.controller === null) {
-      yield* Effect.promise(() => tab.control.take(viewer.id));
-    }
     broadcastControl(tab);
     pushFileChooser(tab);
     const pushStill = async () => {
@@ -3371,7 +3368,7 @@ const make = Effect.gen(function* () {
               await releasing;
             } else if (
               message.type === "dialog" &&
-              tab.control.controller === viewer.id &&
+              (tab.control.controller ?? viewer.id) === viewer.id &&
               typeof message.accept === "boolean"
             ) {
               await resolveDialog(tab, {

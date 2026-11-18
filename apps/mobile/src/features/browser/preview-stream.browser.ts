@@ -1,6 +1,7 @@
 import {
   createPreviewFramePainter,
   createPreviewStreamClient,
+  previewStreamAcceptsInput,
   previewStreamModifiers,
   type PreviewStreamClient,
   type PreviewStreamControl,
@@ -181,7 +182,7 @@ export function start(configuration: PreviewStreamConfiguration) {
           post({ type: "viewport", width: page.width, height: page.height });
         },
         onProbe: (result) => {
-          if (control?.controller !== "you") return;
+          if (!previewStreamAcceptsInput(control)) return;
           const current = probe;
           if (!current || current.x !== result.x || current.y !== result.y) return;
           probeCache = {
@@ -206,10 +207,10 @@ export function start(configuration: PreviewStreamConfiguration) {
           control = nextControl;
           post({ type: "control", ...nextControl });
           if (nextControl.controller === "you") agentCursor.style.opacity = "0";
-          if (nextControl.controller !== "you") clearInput();
+          if (!previewStreamAcceptsInput(nextControl)) clearInput();
           else {
             input.disabled = !interactive;
-            if (interactive && size && previous?.controller !== "you")
+            if (interactive && size && !previewStreamAcceptsInput(previous))
               next.send({ type: "resize", ...size });
           }
         },
@@ -288,7 +289,12 @@ export function start(configuration: PreviewStreamConfiguration) {
   };
 
   const pagePoint = (clientX: number, clientY: number, clamp: boolean) => {
-    if (!viewport || canvas.width === 0 || canvas.height === 0 || control?.controller !== "you")
+    if (
+      !viewport ||
+      canvas.width === 0 ||
+      canvas.height === 0 ||
+      !previewStreamAcceptsInput(control)
+    )
       return null;
     const rect = canvas.getBoundingClientRect();
     const fit = Math.min(rect.width / canvas.width, rect.height / canvas.height);
@@ -362,7 +368,7 @@ export function start(configuration: PreviewStreamConfiguration) {
     modifiers: previewStreamModifiers(event),
   });
   const onPointerDown = (event: PointerEvent) => {
-    if (control?.controller !== "you") return;
+    if (!previewStreamAcceptsInput(control)) return;
     if (!event.isPrimary) return;
     event.preventDefault();
     if (event.pointerType !== "touch") {
@@ -400,7 +406,7 @@ export function start(configuration: PreviewStreamConfiguration) {
     send({ type: "probe", x: point.x, y: point.y });
   };
   const onPointerMove = (event: PointerEvent) => {
-    if (control?.controller !== "you") return;
+    if (!previewStreamAcceptsInput(control)) return;
     if (event.pointerType !== "touch") {
       const point = pagePoint(event.clientX, event.clientY, mouseButtons !== 0);
       if (!point) return;
@@ -506,7 +512,7 @@ export function start(configuration: PreviewStreamConfiguration) {
   const preventDefault = (event: Event) => event.preventDefault();
 
   const onKey = (action: "down" | "up", event: KeyboardEvent) => {
-    if (control?.controller !== "you") return;
+    if (!previewStreamAcceptsInput(control)) return;
     if (
       event.isComposing ||
       event.keyCode === 229 ||

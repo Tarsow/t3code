@@ -282,11 +282,12 @@ is the same browser [HTML renders](html-renders.md) use, so a host downloads it
 only once. Some Linux hosts need [setup](#browser-host-setup) before it can
 start.
 
-Agent tabs have separate storage and share a Chromium process. Take control before
-typing into an agent's tab, then release control when you want the agent to
-continue. Read-only connections can watch without changing the page.
+Agent tabs have separate storage and share a Chromium process. You and the agent can
+both use a tab at the same time. Take control when you want the agent to wait, then
+release control to let it continue. Read-only connections can watch without changing
+the page.
 
-While you have control, the tab works with your device: text the page copies or
+While you use the tab, it works with your device: text the page copies or
 cuts goes to your clipboard, a file picker on the page opens your device's
 picker, and a finished download is offered for you to save. Popups such as
 sign-in windows open as their own tabs. Downloads stay on the host until the

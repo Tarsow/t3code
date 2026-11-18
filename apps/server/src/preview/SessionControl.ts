@@ -16,6 +16,11 @@ export class BrowserControlInterrupted extends Schema.TaggedError<BrowserControl
   },
 ) {}
 
+type LatestHuman = {
+  entry: { viewerId: string; key: string; input: unknown; run: (input: never) => Promise<void> };
+  result: Promise<void>;
+};
+
 const settle = (work: Promise<unknown>) =>
   work.then(
     () => undefined,
@@ -27,13 +32,13 @@ export class SessionControl {
   readonly agentId: string | null;
   private readonly onGenerationChange: () => void;
   private tail: Promise<unknown> = Promise.resolve();
-  private latestHuman: {
-    entry: { viewerId: string; key: string; input: unknown; run: (input: never) => Promise<void> };
-    result: Promise<void>;
-  } | null = null;
+  private latestHuman: LatestHuman | null = null;
   private pending: Promise<void> = Promise.resolve();
   private readonly handoff = new Set<Promise<void>>();
   private owner: string | null = null;
+  private sharedTail: Promise<unknown> = Promise.resolve();
+  private latestShared: LatestHuman | null = null;
+  private lastSharedViewer: string | null = null;
   private epoch = 0;
   private closed = false;
 
@@ -48,6 +53,11 @@ export class SessionControl {
 
   get generation() {
     return this.epoch;
+  }
+
+  /** The viewer a page's prompts go to: the controller, else whoever last used the shared tab. */
+  get activeViewer() {
+    return this.owner ?? this.lastSharedViewer;
   }
 
   private enqueue<A>(run: () => Promise<A>): Promise<A> {
@@ -83,6 +93,7 @@ export class SessionControl {
 
   private changeOwner(owner: string | null) {
     this.latestHuman = null;
+    this.latestShared = null;
     this.owner = owner;
     this.epoch++;
     this.onGenerationChange();
@@ -147,7 +158,23 @@ export class SessionControl {
   }
 
   human<A>(viewerId: string, run: () => Promise<A>) {
+    if (this.owner === null) return this.shared(viewerId, run);
     return this.action(() => this.owner === viewerId, run);
+  }
+
+  /** Without a controller, viewer input keeps its own order beside agent work instead of queueing behind it. */
+  private async shared<A>(viewerId: string, run: () => Promise<A>) {
+    this.assertOpen();
+    const epoch = this.epoch;
+    this.latestShared = null;
+    this.lastSharedViewer = viewerId;
+    const result = this.sharedTail.then(async () => {
+      this.assertOpen();
+      if (epoch !== this.epoch) throw new BrowserControlInterrupted();
+      return run();
+    });
+    this.sharedTail = settle(result);
+    return result;
   }
 
   /**
@@ -161,8 +188,10 @@ export class SessionControl {
     run: (input: A) => Promise<void>,
     merge: (waiting: A, next: A) => A = (_waiting, next) => next,
   ): Promise<void> {
-    if (this.closed || this.owner !== viewerId) return this.human(viewerId, () => run(input));
-    const latest = this.latestHuman;
+    const lane =
+      this.owner === viewerId ? "latestHuman" : this.owner === null ? "latestShared" : null;
+    if (this.closed || lane === null) return this.human(viewerId, () => run(input));
+    const latest = this[lane];
     if (latest?.entry.viewerId === viewerId && latest.entry.key === key) {
       latest.entry.input = merge(latest.entry.input as A, input);
       latest.entry.run = run;
@@ -170,10 +199,10 @@ export class SessionControl {
     }
     const entry = { viewerId, key, input, run };
     const result = this.human(viewerId, async () => {
-      if (this.latestHuman?.entry === entry) this.latestHuman = null;
+      if (this[lane]?.entry === entry) this[lane] = null;
       await entry.run(entry.input);
     });
-    this.latestHuman = { entry, result };
+    this[lane] = { entry, result };
     return result;
   }
 
@@ -183,7 +212,9 @@ export class SessionControl {
       throw new BrowserControlInterrupted({ message: "Another viewer controls this browser tab." });
     }
     if (this.owner !== viewerId) this.changeOwner(viewerId);
-    return this.human(viewerId, async () => {});
+    return this.human(viewerId, async () => {
+      await this.sharedTail;
+    });
   }
 
   async release(viewerId: string, afterDrain: () => Promise<void> = async () => {}) {
@@ -201,7 +232,12 @@ export class SessionControl {
   }
 
   async disconnect(viewerId: string, afterDrain?: () => Promise<void>) {
-    if (!this.closed && this.owner === viewerId) await this.release(viewerId, afterDrain);
+    if (this.closed) return;
+    if (this.owner === viewerId) return this.release(viewerId, afterDrain);
+    if (this.lastSharedViewer === viewerId) this.lastSharedViewer = null;
+    // Shared input can leave keys or buttons held without control.
+    await this.sharedTail;
+    await afterDrain?.();
   }
 
   async close() {
@@ -209,6 +245,6 @@ export class SessionControl {
       this.closed = true;
       this.changeOwner(null);
     }
-    await this.tail;
+    await Promise.all([this.tail, this.sharedTail]);
   }
 }

@@ -1,6 +1,7 @@
 import {
   createPreviewFramePainter,
   createPreviewStreamClient,
+  previewStreamAcceptsInput,
   previewStreamControlLabel,
   previewStreamModifiers,
   type PreviewStreamClient,
@@ -276,7 +277,12 @@ export function ServerBrowserSurface(props: {
   const pagePoint = (clientX: number, clientY: number, clamp: boolean): PagePoint | null => {
     const canvas = canvasRef.current;
     const viewport = viewportRef.current;
-    if (!canvas || !viewport || !hasFrameRef.current || controlRef.current?.controller !== "you")
+    if (
+      !canvas ||
+      !viewport ||
+      !hasFrameRef.current ||
+      !previewStreamAcceptsInput(controlRef.current)
+    )
       return null;
     const rect = canvas.getBoundingClientRect();
     const fit = Math.min(rect.width / canvas.width, rect.height / canvas.height);
@@ -388,7 +394,7 @@ export function ServerBrowserSurface(props: {
           painter.paint(jpeg);
         },
         onProbe: (result) => {
-          if (controlRef.current?.controller !== "you") return;
+          if (!previewStreamAcceptsInput(controlRef.current)) return;
           lastProbeRef.current = { ...result, at: performance.now() };
           const probe = probeRef.current;
           if (!probe || probe.x !== result.x || probe.y !== result.y) return;
@@ -421,9 +427,9 @@ export function ServerBrowserSurface(props: {
             next.dialog?.defaultValue !== previous?.dialog?.defaultValue
           )
             setPromptText(next.dialog?.defaultValue ?? "");
-          if (next.controller !== "you") {
+          if (!previewStreamAcceptsInput(next)) {
             clearInput();
-          } else if (previous?.controller !== "you") {
+          } else if (!previewStreamAcceptsInput(previous)) {
             const size = sizeRef.current;
             if (followSize && size) client.send({ type: "resize", ...size });
           }
@@ -505,7 +511,7 @@ export function ServerBrowserSurface(props: {
   );
 
   const handlePointer = (event: PointerEvent<HTMLCanvasElement>) => {
-    if (controlRef.current?.controller !== "you") return;
+    if (!previewStreamAcceptsInput(controlRef.current)) return;
     // Thumb buttons drive this tab's history in handleMouseUp, never the page.
     if (historyDeltaOf(event.button) !== null) return;
     const { type, pointerId, clientX, clientY } = event;
@@ -672,12 +678,12 @@ export function ServerBrowserSurface(props: {
   const handleClipboard = (key: typeof COPY | typeof CUT, event: ClipboardEvent) => {
     // Keep the sentinel off the clipboard.
     event.preventDefault();
-    if (controlRef.current?.controller !== "you") return;
+    if (!previewStreamAcceptsInput(controlRef.current)) return;
     sendKeyPress(key, CTRL);
   };
 
   const handleKey = (action: "down" | "up", event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (controlRef.current?.controller !== "you") return;
+    if (!previewStreamAcceptsInput(controlRef.current)) return;
     keySentRef.current = false;
     if (
       event.nativeEvent.isComposing ||
@@ -809,7 +815,7 @@ export function ServerBrowserSurface(props: {
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
-          disabled={pdfUrl !== null || control?.controller !== "you"}
+          disabled={pdfUrl !== null || !previewStreamAcceptsInput(control)}
           defaultValue={INPUT_SENTINEL}
           onFocus={(event) => resetInput(event.currentTarget)}
           className="sr-only top-0 left-0 text-base"
@@ -829,7 +835,7 @@ export function ServerBrowserSurface(props: {
             if (text) send({ type: "text", text });
           }}
         />
-        {fileChooser && control?.controller === "you" ? (
+        {fileChooser && previewStreamAcceptsInput(control) ? (
           <div
             className="absolute inset-x-2 top-2 z-10 flex flex-col gap-2 rounded-lg border border-border bg-background p-3 shadow-lg"
             role="dialog"
@@ -871,7 +877,7 @@ export function ServerBrowserSurface(props: {
             aria-label={gt("Browser dialog")}
           >
             <p className="break-words text-sm">{control.dialog.message}</p>
-            {control.controller === "you" ? (
+            {previewStreamAcceptsInput(control) ? (
               <>
                 {control.dialog.type === "prompt" ? (
                   <Input

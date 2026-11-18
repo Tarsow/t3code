@@ -4,6 +4,7 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import * as Dialog from "../../components/ui/Dialog";
 import previewStreamScript from "@t3tools/mobile-preview-stream";
 import {
+  previewStreamAcceptsInput,
   previewStreamControlLabel,
   previewStreamHostSetupMessage,
   type PreviewStreamControl,
@@ -447,7 +448,7 @@ function PreviewStreamDocumentView({
           </View>
         ) : null}
       </View>
-      {!compact && fileChooser && control?.controller === "you" ? (
+      {!compact && fileChooser && previewStreamAcceptsInput(control) ? (
         <View className="absolute inset-x-3 top-16 gap-3 rounded-xl border border-secondary-border bg-secondary p-4">
           <AppText className="text-sm text-secondary-foreground">
             {fileChooser.multiple
@@ -467,7 +468,7 @@ function PreviewStreamDocumentView({
       {!compact && control?.dialog ? (
         <View className="absolute inset-x-3 top-16 gap-3 rounded-xl border border-secondary-border bg-secondary p-4">
           <AppText className="text-sm text-secondary-foreground">{control.dialog.message}</AppText>
-          {control.controller === "you" ? (
+          {previewStreamAcceptsInput(control) ? (
             <>
               {control.dialog.type === "prompt" ? (
                 <TextInput

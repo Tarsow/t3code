@@ -91,7 +91,7 @@ describe("preview stream control", () => {
     client.stop();
   });
 
-  it("revokes input immediately on release and exposes pending dialog state", () => {
+  it("shares input after release, revokes it when another viewer takes control, and exposes pending dialog state", () => {
     const { client, socket, onControl } = connect();
     const owned = {
       ...agent,
@@ -103,6 +103,8 @@ describe("preview stream control", () => {
     expect(client.send({ type: "dialog", accept: true, promptText: "answer" })).toBe(true);
     expect(client.send({ type: "releaseControl" })).toBe(true);
     socket.control({ ...agent, generation: 2 });
+    expect(client.send({ type: "text", text: "beside the agent" })).toBe(true);
+    socket.control({ ...agent, controller: "another-viewer", generation: 3 });
     expect(client.send({ type: "text", text: "late input" })).toBe(false);
     expect(client.send({ type: "dialog", accept: false })).toBe(false);
     client.stop();

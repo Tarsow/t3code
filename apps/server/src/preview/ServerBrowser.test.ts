@@ -3262,6 +3262,28 @@ it.effect(
         });
         const tabId = PreviewTabId.make(opened.tabId);
         const viewer = yield* browser.attachViewer(viewerInput(tabId, true));
+        const shared = yield* broker.invoke<PreviewAutomationStatus>({
+          scope,
+          operation: "status",
+          input: {},
+        });
+        expect(shared.control).toMatchObject({ owner: "unclaimed", ownedByCaller: false });
+        // Until someone takes control, the viewer and the agent both drive the tab.
+        yield* viewer.input({ type: "text", text: "beside the agent" });
+        expect(contexts[0]!.sessions.at(-1)!.send).toHaveBeenCalledWith("Input.insertText", {
+          text: "beside the agent",
+        });
+        yield* broker.invoke({
+          scope,
+          tabId,
+          operation: "navigate",
+          input: { url: "http://localhost:5173/shared" },
+        });
+        expect(contexts[0]!.page.goto).toHaveBeenCalledWith(
+          "http://localhost:5173/shared",
+          expect.anything(),
+        );
+        yield* viewer.input({ type: "takeControl" });
         const status = yield* broker.invoke<PreviewAutomationStatus>({
           scope,
           operation: "status",

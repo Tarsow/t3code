@@ -3,6 +3,7 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import * as Dialog from "../../components/ui/Dialog";
 import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId, ThreadId, type PreviewSessionSnapshot } from "@t3tools/contracts";
+import { previewStreamAcceptsInput } from "@t3tools/client-runtime/preview/server-browser-stream";
 import { normalizePreviewUrl, previewPdfAssetUrl } from "@t3tools/shared/preview";
 import * as Option from "effect/Option";
 import { msg, useGT, useMessages } from "gt-react-native";
@@ -189,7 +190,7 @@ function BrowserPreviewScreen({
               background={themeVariables["--color-sheet-solid"]}
               onPictureInPicture={onPictureInPicture}
               onStreamingChange={setStreaming}
-              onControl={(control) => setCanControl(control?.controller === "you")}
+              onControl={(control) => setCanControl(previewStreamAcceptsInput(control))}
             />
           ) : (
             <View className="flex-1" />
